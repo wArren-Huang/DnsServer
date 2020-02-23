@@ -4537,7 +4537,7 @@ namespace DnsServerCore
                 _log.Write("DNS Server is restoring default config file.");
 
                 _dnsServer.ServerDomain = Environment.MachineName.ToLower();
-                _webServicePort = 5380;
+                _webServicePort = 80;
                 _dnsServer.LocalAddresses = new IPAddress[] { IPAddress.Any, IPAddress.IPv6Any };
 
                 SetCredentials("admin", "admin");

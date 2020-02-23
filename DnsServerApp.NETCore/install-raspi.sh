@@ -101,7 +101,7 @@ then
 	
 	echo ""
 	echo "Technitium DNS Server was installed succesfully!"
-	echo "Open http://$(hostname):5380/ to access the web console."
+	echo "Open http://$(hostname):80/ to access the web console."
 else
 	echo ""
 	echo "Failed to download Technitium DNS Server from: $dnsUrl"

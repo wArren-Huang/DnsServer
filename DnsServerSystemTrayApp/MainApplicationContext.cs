@@ -522,7 +522,7 @@ namespace DnsServerSystemTrayApp
 
         private void DashboardMenuItem_Click(object sender, EventArgs e)
         {
-            int port = 5380;
+            int port = 80;
 
             try
             {

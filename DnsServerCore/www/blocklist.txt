@@ -1,7 +1,7 @@
 # Technitium DNS Server Custom Block List
 #
 # This file is accessible from the DNS Server's web service using URL:
-# http://localhost:5380/blocklist.txt
+# http://localhost:80/blocklist.txt
 #
 # The URL to this file can be configure as Block List URLs in the DNS Server 
 # settings.
