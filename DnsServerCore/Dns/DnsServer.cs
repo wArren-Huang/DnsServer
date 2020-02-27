@@ -22,6 +22,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Security;
@@ -29,6 +30,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using DnsServerCore.Dns.SmartResolver;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 using TechnitiumLibrary.Net.Dns;
@@ -1193,18 +1195,19 @@ namespace DnsServerCore.Dns
                                 }
                             }
 
-                            //query forwarders and update cache
-                            DnsClient dnsClient = new DnsClient(_forwarders);
+                            var config = new Config(_log, _forwarders, _proxy, _preferIPv6, _forwarderProtocol,
+                                _retries, _timeout);
+                            var question = request.Question[0];
+                            
+                            // var reliableResolver = new ReliableResolver(config);
+                            //
+                            // response = reliableResolver.Resolve(question);
+                            var fastResolveStopwatch = new Stopwatch();
+                            fastResolveStopwatch.Start();
+                            response = new FastResolver().Resolve(question, config.Forwarders, config);
+                            fastResolveStopwatch.Stop();
 
-                            dnsClient.Proxy = _proxy;
-                            dnsClient.PreferIPv6 = _preferIPv6;
-                            dnsClient.Protocol = _forwarderProtocol;
-                            dnsClient.Retries = _retries;
-                            dnsClient.Timeout = _timeout;
-
-                            response = dnsClient.Resolve(request.Question[0]);
-
-                            _dnsCache.CacheResponse(response);
+                            //_dnsCache.CacheResponse(response);
                         }
                         else
                         {
