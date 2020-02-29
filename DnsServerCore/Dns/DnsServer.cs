@@ -1195,17 +1195,12 @@ namespace DnsServerCore.Dns
                                 }
                             }
 
-                            var config = new Config(_log, _forwarders, _proxy, _preferIPv6, _forwarderProtocol,
+                            var config = new DnsResolverConfig(_log, _forwarders, _proxy, _preferIPv6, _forwarderProtocol,
                                 _retries, _timeout);
                             var question = request.Question[0];
-                            
-                            // var reliableResolver = new ReliableResolver(config);
-                            //
-                            // response = reliableResolver.Resolve(question);
-                            var fastResolveStopwatch = new Stopwatch();
-                            fastResolveStopwatch.Start();
-                            response = new FastResolver().Resolve(question, config.Forwarders, config);
-                            fastResolveStopwatch.Stop();
+
+                            response = ReliableResolver.Resolve(question, config);
+                            // response = FastResolver.Resolve(question, config.Forwarders, config);
 
                             //_dnsCache.CacheResponse(response);
                         }

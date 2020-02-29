@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -11,7 +12,13 @@ namespace DnsServerCore.Dns.SmartResolver
     public static class HttpsSpeedTester
     {
         private const int DefaultPort = 443;
+        private static readonly char[] Splitter;
 
+        static HttpsSpeedTester()
+        {
+            Splitter = new[] {','};
+        }
+        
         public static ResponseResult Test(string ipAddress, string domain, int speedTestTimeout)
         {
             return Test(ipAddress, DefaultPort, domain, speedTestTimeout);
@@ -60,23 +67,30 @@ namespace DnsServerCore.Dns.SmartResolver
                 throw new SpeedTestException("Unhandled exception when HttpsSpeedTester trying to EndConnect", e);
             }
             try
-            { 
+            {
+                string certificateSubject = null;
                 var sslStream = new SslStream(
                     tcpClient.GetStream(), 
                     false, 
                     new RemoteCertificateValidationCallback(
-                        (o, certificate, chain, errors) => errors == SslPolicyErrors.None), 
+                        (o, certificate, chain, errors) =>
+                        {
+                            certificateSubject = certificate.Subject;
+                            return errors == SslPolicyErrors.None;
+                        }), 
                     null);
-                
                 sslStream.AuthenticateAsClient(domain);
-                
                 stopwatch.Stop();
+                var commonName = certificateSubject
+                        .Split(Splitter, StringSplitOptions.RemoveEmptyEntries)
+                        .First((s) => s.StartsWith("CN="));
                 return new ResponseResult()
                 {
                     IpAddress = ipAddress, 
                     Time = stopwatch.ElapsedMilliseconds, 
                     Result = SpeedTestResult.SuccessWithValidation,
-                    Method = SpeedTestMethod.Https
+                    Method = SpeedTestMethod.Https,
+                    Certificate = commonName
                 };
             }
             catch (AuthenticationException)

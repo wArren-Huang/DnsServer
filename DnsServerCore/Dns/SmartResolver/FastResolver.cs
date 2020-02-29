@@ -10,22 +10,21 @@ namespace DnsServerCore.Dns.SmartResolver
 {
     public class FastResolver
     {
-        private ManualResetEvent _ManualResetEvent = null;
-        private Thread[] _ResolvingThreads = null;
-        private Response _Response = new Response();
+        private readonly ManualResetEvent _ManualResetEvent = new ManualResetEvent(false);
+        private readonly Response _Response = new Response();
         
         public static DnsDatagram Resolve(DnsQuestionRecord questionRecord, NameServerAddress dnsServer,
-            Config config)
+            DnsResolverConfig dnsResolverConfig)
         {
             try
             {
                 var dnsClient = new DnsClient(dnsServer)
                 {
-                    Proxy = config.Proxy,
-                    PreferIPv6 = config.PreferIPv6,
-                    Protocol = config.ForwarderProtocol,
-                    Retries = config.Retries,
-                    Timeout = config.Timeout
+                    Proxy = dnsResolverConfig.Proxy,
+                    PreferIPv6 = dnsResolverConfig.PreferIPv6,
+                    Protocol = dnsResolverConfig.ForwarderProtocol,
+                    Retries = dnsResolverConfig.Retries,
+                    Timeout = dnsResolverConfig.Timeout
                 };
                 return dnsClient.Resolve(questionRecord);
             }
@@ -35,35 +34,37 @@ namespace DnsServerCore.Dns.SmartResolver
             }
         }
 
-        public DnsDatagram Resolve(DnsQuestionRecord questionRecord, NameServerAddress[] dnsServers,
-            Config config)
+        public static DnsDatagram Resolve(DnsQuestionRecord questionRecord, NameServerAddress[] dnsServers,
+            DnsResolverConfig dnsResolverConfig)
+        {
+            var fastResolver = new FastResolver();
+            return fastResolver.ResolveAndReturnFirstResponse(questionRecord, dnsServers, dnsResolverConfig);
+        }
+
+        private DnsDatagram ResolveAndReturnFirstResponse(DnsQuestionRecord questionRecord, 
+            NameServerAddress[] dnsServers, DnsResolverConfig dnsResolverConfig)
         {
             var question = questionRecord.Name;
             var overallStopwatch = new Stopwatch();
-            _ManualResetEvent = new ManualResetEvent(false);
-            _ResolvingThreads = new Thread[dnsServers.Length];
 
             overallStopwatch.Start();
-            Console.WriteLine($"FastResolver[{this.GetHashCode()}] start to resolve [{question}]");
-            for (var i = 0; i < dnsServers.Length; i++)
+            Console.WriteLine($"FastResolver[{this.GetHashCode()}-{Thread.CurrentThread.ManagedThreadId}] start to resolve [{question}]");
+            foreach (var dnsServer in dnsServers)
             {
-                _ResolvingThreads[i] = new Thread(new ParameterizedThreadStart(ResolveWith));
                 var context = new ResolvingContext()
                 {
-                    Config = config,
-                    DnsServer = dnsServers[i],
+                    DnsResolverConfig = dnsResolverConfig,
+                    DnsServer = dnsServer,
                     QuestionRecord = questionRecord
                 } as object;
-                _ResolvingThreads[i].Start(context);
+                ThreadPool.QueueUserWorkItem(ResolveWith, context);
             }
-            Console.WriteLine(
-                $"FastResolver[{this.GetHashCode()}] finish starting all resolving threads for [{question}] in {overallStopwatch.ElapsedMilliseconds} ms");
             _ManualResetEvent.WaitOne();
             lock (_Response)
             {
                 overallStopwatch.Stop();
                 Console.WriteLine(
-                    $"FastResolver[{this.GetHashCode()}] finish resolving [{question}] by [{_Response.DnsServer}] in {overallStopwatch.ElapsedMilliseconds} ms");
+                    $"FastResolver[{this.GetHashCode()}-{Thread.CurrentThread.ManagedThreadId}] finish resolving [{question}] by [{_Response.DnsServer}] in {overallStopwatch.ElapsedMilliseconds} ms");
                 return _Response.DnsResponse;
             }
         }
@@ -80,11 +81,11 @@ namespace DnsServerCore.Dns.SmartResolver
                 {
                     var dnsClient = new DnsClient(resolvingContext.DnsServer)
                     {
-                        Proxy = resolvingContext.Config.Proxy,
-                        PreferIPv6 = resolvingContext.Config.PreferIPv6,
-                        Protocol = resolvingContext.Config.ForwarderProtocol,
-                        Retries = resolvingContext.Config.Retries,
-                        Timeout = resolvingContext.Config.Timeout
+                        Proxy = resolvingContext.DnsResolverConfig.Proxy,
+                        PreferIPv6 = resolvingContext.DnsResolverConfig.PreferIPv6,
+                        Protocol = resolvingContext.DnsResolverConfig.ForwarderProtocol,
+                        Retries = resolvingContext.DnsResolverConfig.Retries,
+                        Timeout = resolvingContext.DnsResolverConfig.Timeout
                     };
                     var response = dnsClient.Resolve(resolvingContext.QuestionRecord);
                     if (response != null)
@@ -121,7 +122,7 @@ namespace DnsServerCore.Dns.SmartResolver
         {
             public NameServerAddress DnsServer { get; set; }
             public DnsQuestionRecord QuestionRecord { get; set; }
-            public Config Config { get; set; }
+            public DnsResolverConfig DnsResolverConfig { get; set; }
         }
 
         private class Response

@@ -3,7 +3,7 @@ using TechnitiumLibrary.Net.Proxy;
 
 namespace DnsServerCore.Dns.SmartResolver
 {
-    public struct Config
+    public struct DnsResolverConfig
     {
         public LogManager Log { get; private set; }
         public NameServerAddress[] Forwarders { get; private set; }
@@ -13,7 +13,7 @@ namespace DnsServerCore.Dns.SmartResolver
         public int Retries { get; private set; }
         public int Timeout { get; private set; }
         
-        public Config(LogManager log, NameServerAddress[] forwarders, NetProxy proxy, bool preferIPv6, 
+        public DnsResolverConfig(LogManager log, NameServerAddress[] forwarders, NetProxy proxy, bool preferIPv6, 
             DnsTransportProtocol forwarderProtocol, int retries, int timeout)
         {
             Log = log;
