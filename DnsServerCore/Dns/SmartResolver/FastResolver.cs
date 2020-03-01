@@ -34,11 +34,10 @@ namespace DnsServerCore.Dns.SmartResolver
             }
         }
 
-        public static DnsDatagram Resolve(DnsQuestionRecord questionRecord, NameServerAddress[] dnsServers,
-            DnsResolverConfig dnsResolverConfig)
+        public static DnsDatagram Resolve(DnsQuestionRecord questionRecord, DnsResolverConfig dnsResolverConfig)
         {
             var fastResolver = new FastResolver();
-            return fastResolver.ResolveAndReturnFirstResponse(questionRecord, dnsServers, dnsResolverConfig);
+            return fastResolver.ResolveAndReturnFirstResponse(questionRecord, dnsResolverConfig.Forwarders, dnsResolverConfig);
         }
 
         private DnsDatagram ResolveAndReturnFirstResponse(DnsQuestionRecord questionRecord, 
