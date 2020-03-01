@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net.Dns;
 
 namespace DnsServerCore.Dns.SmartResolver
@@ -16,10 +20,25 @@ namespace DnsServerCore.Dns.SmartResolver
         private const int DnsServerCount = 10;
         private const string DomainSplitterString = ".";
         private const SpeedTestMethod DefaultSpeedTestMethod = SpeedTestMethod.Unspecified;
+
+        private const string StartRouge = "========== Start Rouge ==========";
+        private const string EndRouge = "========== End Rouge ==========";
+        private const string StartSlow = "========== Start Slow ==========";
+        private const string EndSlow = "========== End Slow ==========";
+        private const string StartKnown = "========== Start Known ==========";
+        private const string EndKnown = "========== End Known ==========";
+        private const string StartPreferMethod = "========== Start Prefer ==========";
+        private const string EndPreferMethod = "========== End Prefer ==========";
+        private const string StartUpdatedAt = "========== Start Updated ==========";
+        private const string EndUpdatedAt = "========== End Updated ==========";
+        private const string StartSavedAt = "========== Start Saved ==========";
+        private const string EndSavedAt = "========== End Saved ==========";
+        private const string Pfs = "|";
         
         private static readonly char[] DomainSplitterCharArray;
         private static readonly object TimeLock;
-        
+        private static readonly string PreferenceFile;
+
         private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTime>> RougeServers;
         private static readonly ConcurrentDictionary<string, DateTime> SlowServers;
         private static readonly ConcurrentDictionary<string, DateTime> KnownDomains;
@@ -29,15 +48,32 @@ namespace DnsServerCore.Dns.SmartResolver
         private static readonly TimeSpan BlockSlowServerFor;
         private static readonly TimeSpan ExpirePreferMethodAfter;
         private static readonly TimeSpan ForgetDomainAfter;
+        private static readonly TimeSpan CheckPreferenceForSavingInterval;
         
-        private static DateTime LastUpdate;
-        private static DateTime LastSave;
+        private static DateTime _lastUpdate;
+        private static DateTime _lastSave;
+
+        private static readonly Task SavingTask;
 
         static ResolvingPreference()
         {
+            BlockRougeServerFor = TimeSpan.FromDays(90);
+            BlockSlowServerFor = TimeSpan.FromMinutes(1);
+            ExpirePreferMethodAfter = TimeSpan.FromDays(1);
+            ForgetDomainAfter = TimeSpan.FromMinutes(59);
+            CheckPreferenceForSavingInterval = TimeSpan.FromMinutes(1);
+            
             DomainSplitterCharArray = new[] {'.'};
             TimeLock = new object();
-            
+
+            var appDirectory = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+            var configDirectory = Path.Combine(appDirectory, "config");
+            if (!Directory.Exists(configDirectory))
+            {
+                Directory.CreateDirectory(configDirectory);
+            }
+            PreferenceFile = Path.Combine(configDirectory, "preference");
+
             RougeServers = 
                 new ConcurrentDictionary<string, ConcurrentDictionary<string, DateTime>>(Concurrency, TargetDomainCount);
             SlowServers = 
@@ -47,15 +83,213 @@ namespace DnsServerCore.Dns.SmartResolver
             KnownDomains = 
                 new ConcurrentDictionary<string, DateTime>();
 
-            //TODO read from file
-            BlockRougeServerFor = TimeSpan.FromMinutes(4);
-            BlockSlowServerFor = TimeSpan.FromMinutes(2);
-            ExpirePreferMethodAfter = TimeSpan.FromSeconds(65);
-            ForgetDomainAfter = TimeSpan.FromMinutes(3);
             lock (TimeLock)
             {
-                LastUpdate = DateTime.Now;
-                LastSave = DateTime.Now.AddMilliseconds(1);
+                _lastUpdate = DateTime.Now;
+                _lastSave = DateTime.Now.AddMilliseconds(1);
+            }
+            
+            LoadFromFile();
+            
+            SavingTask = Task.Factory.StartNew(() =>
+            {
+                while (true)
+                {
+                    Thread.Sleep((int) CheckPreferenceForSavingInterval.TotalMilliseconds);
+                    SaveToFile();
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        private static bool IsDirty()
+        {
+            return _lastSave.CompareTo(_lastUpdate) < 0;
+        }
+        
+        private static void LoadFromFile()
+        {
+            if (!File.Exists(PreferenceFile))
+            {
+                Console.WriteLine(
+                    $"ResolvingPreference[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"Preference not exist, applying empty preferences.");
+                return;
+            }
+
+            try
+            {
+                using (var fileStream = new FileStream(PreferenceFile, FileMode.Open, FileAccess.Read))
+                {
+                    var reader = new StreamReader(fileStream, Encoding.UTF8);
+                    while (!reader.EndOfStream)
+                    {
+                        string line;
+                        switch (reader.ReadLine())
+                        {
+                            case StartRouge:
+                                line = reader.ReadLine();
+                                do
+                                {
+                                    var parts = line.Split(new[] {Pfs}, StringSplitOptions.RemoveEmptyEntries);
+                                    var domain = parts[0];
+                                    var dnsServer = parts[1];
+                                    var since = DateTime.FromFileTime(long.Parse(parts[2]));
+                                    if (!RougeServers.ContainsKey(parts[0]))
+                                    {
+                                        RougeServers[domain] =
+                                            new ConcurrentDictionary<string, DateTime>(Concurrency, TargetDomainCount);
+                                    }
+
+                                    RougeServers[domain][dnsServer] = since;
+                                    line = reader.ReadLine();
+                                } while (EndRouge.Equals(line));
+                                break;
+                            case StartSlow:
+                                line = reader.ReadLine();
+                                do
+                                {
+                                    var parts = line.Split(new[] {Pfs}, StringSplitOptions.RemoveEmptyEntries);
+                                    var dnsServer = parts[0];
+                                    var since = DateTime.FromFileTime(long.Parse(parts[1]));
+                                    SlowServers[dnsServer] = since;
+                                    line = reader.ReadLine();
+                                } while (EndSlow.Equals(line));
+                                break;
+                            case StartKnown:
+                                line = reader.ReadLine();
+                                do
+                                {
+                                    var parts = line.Split(new[] {Pfs}, StringSplitOptions.RemoveEmptyEntries);
+                                    var domain = parts[0];
+                                    var since = DateTime.FromFileTime(long.Parse(parts[1]));
+                                    KnownDomains[domain] = since;
+                                    line = reader.ReadLine();
+                                } while (EndKnown.Equals(line));
+                                break;
+                            case StartSavedAt:
+                                line = reader.ReadLine();
+                                do
+                                {
+                                    _lastSave = DateTime.FromFileTime(long.Parse(line));
+                                    line = reader.ReadLine();
+                                } while (EndSavedAt.Equals(line));
+                                break;
+                            case StartUpdatedAt:
+                                line = reader.ReadLine();
+                                do
+                                {
+                                    _lastUpdate = DateTime.FromFileTime(long.Parse(line));
+                                    line = reader.ReadLine();
+                                } while (EndUpdatedAt.Equals(line));
+                                break;
+                            case StartPreferMethod:
+                                line = reader.ReadLine();
+                                do
+                                {
+                                    var parts = line.Split(new[] {Pfs}, StringSplitOptions.RemoveEmptyEntries);
+                                    var domain = parts[0];
+                                    var method = (SpeedTestMethod) Enum.Parse(typeof(SpeedTestMethod), parts[1]);
+                                    var since = DateTime.FromFileTime(long.Parse(parts[2]));
+                                    DomainPreferredMethod[domain] = new PreferMethodRecord()
+                                    {
+                                        Method = method,
+                                        StartTime = since
+                                    };
+                                    line = reader.ReadLine();
+                                } while (EndPreferMethod.Equals(line));
+                                break;
+                            case null:
+                                break;
+                            default:
+                                throw new InvalidDataException("Incorrect Preference file format");
+                        }
+                    }
+
+                    Console.WriteLine(
+                        $"ResolvingPreference[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                        $"Preference file loaded.");
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"ResolvingPreference[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                                  $"Failed to load from Preference file." +
+                                  e.ToString());
+            }
+        }
+
+        private static void SaveToFile()
+        {
+            if (!IsDirty())
+            {
+                Console.WriteLine($"ResolvingPreference[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"Preference is not updated in the last {CheckPreferenceForSavingInterval.Minutes.ToString()} minutes " +
+                    $"thus does not need to be saved.");
+                return;
+            }
+
+            using (var memoryStream = new MemoryStream())
+            {
+                var writer = new StreamWriter(memoryStream, Encoding.UTF8);
+                
+                writer.WriteLine(StartPreferMethod);
+                foreach (var domainRecord in DomainPreferredMethod)
+                {
+                    var domain = domainRecord.Key;
+                    var method = domainRecord.Value.Method;
+                    var since = domainRecord.Value.StartTime;
+                    writer.WriteLine($"{domain}{Pfs}{method.ToString()}{Pfs}{since.ToFileTime().ToString()}");
+                }
+                writer.WriteLine(EndPreferMethod);
+                
+                writer.WriteLine(StartRouge);
+                foreach (var domainRecord in RougeServers)
+                {
+                    var domain = domainRecord.Key;
+                    foreach (var serverRecord in domainRecord.Value)
+                    {
+                        writer.WriteLine(
+                            $"{domain}{Pfs}{serverRecord.Key}{Pfs}{serverRecord.Value.ToFileTime().ToString()}");
+                    }
+                }
+                writer.WriteLine(EndRouge);
+
+                writer.WriteLine(StartSlow);
+                foreach (var slowServer in SlowServers)
+                {
+                    writer.WriteLine($"{slowServer.Key}{Pfs}{slowServer.Value.ToFileTime().ToString()}");
+                }
+                writer.WriteLine(EndSlow);
+
+                writer.WriteLine(StartKnown);
+                foreach (var knownDomain in KnownDomains)
+                {
+                    writer.WriteLine($"{knownDomain.Key}{Pfs}{knownDomain.Value.ToFileTime().ToString()}");
+                }
+                writer.WriteLine(EndKnown);
+
+                lock (TimeLock)
+                {
+                    _lastSave = DateTime.Now;
+                    writer.WriteLine(StartUpdatedAt);
+                    writer.WriteLine(_lastUpdate.ToFileTime().ToString());
+                    writer.WriteLine(EndUpdatedAt);
+                }
+
+                writer.WriteLine(StartSavedAt);
+                writer.WriteLine(_lastSave.ToFileTime().ToString());
+                writer.WriteLine(EndSavedAt);
+
+                writer.Flush();
+                using (var fileStream = new FileStream(PreferenceFile, FileMode.Create, FileAccess.Write))
+                {
+                    memoryStream.Position = 0;
+                    memoryStream.CopyTo(fileStream);
+                    fileStream.Flush();
+                }
+
+                Console.WriteLine(
+                    $"ResolvingPreference[{Thread.CurrentThread.ManagedThreadId.ToString()}] Preference saved.");
             }
         }
 
@@ -63,7 +297,7 @@ namespace DnsServerCore.Dns.SmartResolver
         {
             lock (TimeLock)
             {
-                LastUpdate = DateTime.Now;
+                _lastUpdate = DateTime.Now;
             }
         }
 
@@ -76,6 +310,8 @@ namespace DnsServerCore.Dns.SmartResolver
         {
             if (KnownDomains.ContainsKey(fqdn))
             {
+                KnownDomains[fqdn] = DateTime.Now;
+                MarkUpdated();
                 return NotExpired(KnownDomains[fqdn], ForgetDomainAfter);
             }
             KnownDomains[fqdn] = DateTime.Now;

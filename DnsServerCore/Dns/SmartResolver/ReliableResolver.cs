@@ -18,6 +18,8 @@ namespace DnsServerCore.Dns.SmartResolver
         private const long SlowThresholdAbsolute = 200L;
         private const double SlowThresholdCompareToStdDev = 2;
 
+        private static readonly string[] NeverMarkForRouge = new[] {"1.1.1.1:53", "8.8.8.8:53"};
+
         private readonly DnsResolverConfig DnsResolverConfig;
 
         private ReliableResolver(DnsResolverConfig dnsResolverConfig)
@@ -42,8 +44,7 @@ namespace DnsServerCore.Dns.SmartResolver
             string domain = questionRecord.Name;
             var overallStopwatch = new Stopwatch();
             var analysisStopwatch = new Stopwatch();
-            var speedTestRounds = ResolvingPreference.IsKnown(domain) ? MaxSpeedTestRounds : 1;
-            
+
             var resolvingTime = new ConcurrentDictionary<string, long>();
             
             ThreadPool.SetMinThreads(Concurrency, Concurrency);
@@ -63,7 +64,7 @@ namespace DnsServerCore.Dns.SmartResolver
                 if (ResolvingPreference.IsBlockedForBeingRouge(domain, forwarder))
                 {
                     Console.WriteLine($"ReliableResolver[{GetHashCode().ToString()}-{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                                      $"Kkipped resolving [{domain}] from [{forwarder}] as it is marked for being rouge");
+                                      $"Skipped resolving [{domain}] from [{forwarder}] as it is marked for being rouge");
                     return;
                 }
                 var dnsServerString = forwarder.ToString();
@@ -99,7 +100,7 @@ namespace DnsServerCore.Dns.SmartResolver
                                 if (preferredMethod == SpeedTestMethod.Https ||
                                     preferredMethod == SpeedTestMethod.Unspecified)
                                 {
-                                    Parallel.For(0, speedTestRounds, (i, loopState) =>
+                                    Parallel.For(0, MaxSpeedTestRounds, (i, loopState) =>
                                     {
                                         var speedTestStopwatch = new Stopwatch();
                                         speedTestStopwatch.Start();
@@ -124,7 +125,7 @@ namespace DnsServerCore.Dns.SmartResolver
                                 if (preferredMethod == SpeedTestMethod.Http ||
                                     preferredMethod == SpeedTestMethod.Unspecified)
                                 {
-                                    Parallel.For(0, speedTestRounds, (i, loopState) =>
+                                    Parallel.For(0, MaxSpeedTestRounds, (i, loopState) =>
                                     {
                                         var speedTestStopwatch = new Stopwatch();
                                         speedTestStopwatch.Start();
@@ -149,7 +150,7 @@ namespace DnsServerCore.Dns.SmartResolver
                                 if (preferredMethod == SpeedTestMethod.Ping ||
                                     preferredMethod == SpeedTestMethod.Unspecified)
                                 {
-                                    Parallel.For(0, speedTestRounds, (i, loopState) =>
+                                    Parallel.For(0, MaxSpeedTestRounds, (i, loopState) =>
                                     {
                                         var speedTestStopwatch = new Stopwatch();
                                         speedTestStopwatch.Start();
@@ -252,7 +253,10 @@ namespace DnsServerCore.Dns.SmartResolver
                     r.Result != SpeedTestResult.SuccessWithValidation).ToArray();
                 foreach (var rougeResponse in rougeResponses)
                 {
-                    ResolvingPreference.MarkAsBlockedForBeingRouge(domain, rougeResponse.DnsServer);
+                    if (!NeverMarkForRouge.Contains(rougeResponse.DnsServer))
+                    {
+                        ResolvingPreference.MarkAsBlockedForBeingRouge(domain, rougeResponse.DnsServer);
+                    }
                 }
                 Console.WriteLine($"ReliableResolver[{GetHashCode().ToString()}-{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                                   $"HTTPS performance:");
@@ -288,7 +292,8 @@ namespace DnsServerCore.Dns.SmartResolver
                                       $"Min Average:{minAverage.ToString()}");
                     return groupPerformance.Where(g => g.Average == minAverage).FirstOrDefault().ResponseResult;
                 }
-                return new ResponseResult();
+                
+                return results.FirstOrDefault();
             }
 
             return results.FirstOrDefault();
@@ -303,9 +308,9 @@ namespace DnsServerCore.Dns.SmartResolver
                 {
                     By = g.Key,
                     ResponseResult = g.FirstOrDefault(),
-                    Max = g.Max(r => r.Time),
+                    // Max = g.Max(r => r.Time),
                     Average = g.Average(r => r.Time),
-                    Min = g.Min(r => r.Time)
+                    // Min = g.Min(r => r.Time)
                 }).ToArray();
 
             foreach (var responsePerformance in groupPerformance)
