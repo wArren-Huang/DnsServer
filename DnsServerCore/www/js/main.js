@@ -20,6 +20,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 var token = null;
 var refreshTimerHandle;
 
+function showStatistics() {
+    if (token == null){
+        alert("Please login first");
+    }
+    else
+    {
+        window.open("/api/stat?token=" + token)
+    }
+}
+
 function showPageLogin() {
     hideAlert();
 

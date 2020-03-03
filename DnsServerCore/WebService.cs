@@ -32,6 +32,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using DnsServerCore.Dns.CustomStatistics;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 using TechnitiumLibrary.Net.Dns;
@@ -404,7 +405,11 @@ namespace DnsServerCore
                                             case "/api/deleteDhcpScope":
                                                 DeleteDhcpScope(request);
                                                 break;
-
+                                            
+                                            case "/api/stat":
+                                                ListStatistics(request, jsonWriter);
+                                                break;
+                                            
                                             default:
                                                 throw new WebServiceException("Invalid command: " + path);
                                         }
@@ -531,6 +536,59 @@ namespace DnsServerCore
 
                 SendError(response, ex);
             }
+        }
+
+        private static void ListStatistics(HttpListenerRequest request, JsonTextWriter jsonWriter)
+        {
+            var globalCounts = ResolvingStatistics.GetGlobalMostSignificantQuestions(100);
+            jsonWriter.WritePropertyName("global");
+            jsonWriter.WriteStartArray();
+            foreach (var count in globalCounts)
+            {
+                jsonWriter.WriteStartObject();
+                jsonWriter.WritePropertyName(count.Key);
+                jsonWriter.WriteValue(count.Value);
+                jsonWriter.WriteEndObject();
+            }
+
+            jsonWriter.WriteEndArray();
+
+            jsonWriter.WritePropertyName("by-client");
+            jsonWriter.WriteStartArray();
+            
+            var clients = ResolvingStatistics.GetClients();
+            foreach (var client in clients)
+            {
+                var clientCounts = ResolvingStatistics.GetClientMostSignificantQuestions(client, 100);
+                var clientLastAttempts = ResolvingStatistics.GetClientLastResolvingAttempts(client);
+                jsonWriter.WriteStartObject();
+                jsonWriter.WritePropertyName(client);
+                jsonWriter.WriteStartObject();
+
+                jsonWriter.WritePropertyName("by-significance");
+                jsonWriter.WriteStartArray();
+                foreach (var count in clientCounts)
+                {
+                    jsonWriter.WriteStartObject();
+                    jsonWriter.WritePropertyName(count.Key);
+                    jsonWriter.WriteValue(count.Value);
+                    jsonWriter.WriteEndObject();
+                }
+                jsonWriter.WriteEndArray();
+                
+                jsonWriter.WritePropertyName("last-attempts");
+                jsonWriter.WriteStartArray();
+                foreach (var attempt in clientLastAttempts)
+                {
+                    jsonWriter.WriteValue(attempt);
+                }
+                jsonWriter.WriteEndArray();
+                
+                jsonWriter.WriteEndObject();
+                jsonWriter.WriteEndObject();
+            }
+
+            jsonWriter.WriteEndArray();
         }
 
         private IPEndPoint GetRequestRemoteEndPoint(HttpListenerRequest request)

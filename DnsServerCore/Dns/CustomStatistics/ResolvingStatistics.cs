@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Xml.Xsl;
+using System.Linq;
 using DnsServerCore.Dns.AntiRogue;
 
 namespace DnsServerCore.Dns.CustomStatistics
@@ -9,7 +9,7 @@ namespace DnsServerCore.Dns.CustomStatistics
     {
         private const int ParallelResolvingCount = 200;
         private const int ClientsCount = 100;
-        private const int LastResolvingAttemptsSizeLimit = 50;
+        public const int LastResolvingAttemptsSizeLimit = 50;
 
         private const int DomainsCount = AntiRogueTester.ExpectedRogueCount + 
                                          AntiRogueTester.ExpectedNonRogueCount + 
@@ -43,5 +43,32 @@ namespace DnsServerCore.Dns.CustomStatistics
             GlobalDomainResolvingCounter.Encountered(domain);
         }
         
+        public static IEnumerable<KeyValuePair<string, int>> GetGlobalMostSignificantQuestions(int count)
+        {
+            return GlobalDomainResolvingCounter.GetMostSignificantItems(count);
+        }
+        
+        public static IEnumerable<string> GetClients()
+        {
+            return ByClientLastResolvingAttempts.Keys;
+        }
+
+        public static IEnumerable<KeyValuePair<string, int>> GetClientMostSignificantQuestions(string client, int count)
+        {
+            if (ByClientDomainResolvingCounter.ContainsKey(client))
+            {
+                return ByClientDomainResolvingCounter[client].GetMostSignificantItems(count);
+            }
+            return new KeyValuePair<string, int>[0] ;
+        }
+        
+        public static IEnumerable<string> GetClientLastResolvingAttempts(string client)
+        {
+            if (ByClientLastResolvingAttempts.ContainsKey(client))
+            {
+                return ByClientLastResolvingAttempts[client];
+            }
+            return new string[0] ;
+        }
     }
 }
