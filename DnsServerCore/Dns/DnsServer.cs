@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿/*
 Technitium DNS Server
 Copyright (C) 2019  Shreyas Zare (shreyas@technitium.com)
 
@@ -22,15 +22,16 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Specialized;
-using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
-using DnsServerCore.Dns.SmartResolver;
+using DnsServerCore.Dns.AntiRogue;
+using DnsServerCore.Dns.CustomStatistics;
 using TechnitiumLibrary.IO;
 using TechnitiumLibrary.Net;
 using TechnitiumLibrary.Net.Dns;
@@ -880,6 +881,14 @@ namespace DnsServerCore.Dns
 
                     try
                     {
+                        var question = request.Question[0];
+                        var client = remoteEP.GetAddress();
+                        if ((question.Class == DnsClass.IN || question.Class == DnsClass.ANY) && 
+                            (question.Type == DnsResourceRecordType.A))
+                        {
+                            ResolvingStatistics.Encountered(client, question.Name);
+                        }
+
                         //query authoritative zone
                         DnsDatagram authoritativeResponse = ProcessAuthoritativeQuery(request, isRecursionAllowed);
 
@@ -1195,13 +1204,55 @@ namespace DnsServerCore.Dns
                                 }
                             }
 
-                            var config = new DnsResolverConfig(_log, _forwarders, _proxy, _preferIPv6,
-                                _forwarderProtocol, _retries, _timeout);
-                            var question = request.Question[0];
+                            //query forwarders and update cache
 
-                            response = SmartResolver.SmartResolver.Resolve(question, config, _dnsCache);
-                            
-                            //_dnsCache.CacheResponse(response);
+                            var dnsResolverConfig = new DnsResolverConfig(_proxy, _preferIPv6, _forwarderProtocol,
+                                _retries, _timeout);
+
+                            DnsClient dnsClient;
+                            var question = request.Question[0];
+                            if (_forwarders.Length > 2)
+                            {
+                                var trustedForwarder = _forwarders[0];
+                                var fastForwarder = _forwarders[1];
+                                var testForwarders = _forwarders.Skip(2).ToArray();
+                                switch (AntiRogueTester.GetTestResult(question.Name))
+                                {
+                                    case RogueResult.Rogue:
+                                    case RogueResult.NotTested:
+                                        dnsClient = new DnsClient(trustedForwarder);
+                                        AntiRogueTester.StartToTestDomain(question, testForwarders, dnsResolverConfig);
+                                        break;
+                                    case RogueResult.Testing:
+                                        dnsClient = new DnsClient(trustedForwarder);
+                                        break;
+                                    case RogueResult.NotRogue:
+                                    case RogueResult.CannotDetermine:
+                                        dnsClient = new DnsClient(fastForwarder);
+                                        break;
+                                    default:
+                                        dnsClient = new DnsClient(fastForwarder);
+                                        break;
+                                }
+                            }
+                            else
+                            {
+                                dnsClient = new DnsClient(_forwarders);
+                                Console.WriteLine("Less then 2 forwarders configured, will no test for rogue, if rogue testing is required, configure forwarders in following orders:");
+                                Console.WriteLine("Line 1: Trusted Forwarder (e.g. 1.1.1.1)");
+                                Console.WriteLine("Line 2: Fast Forwarder (e.g. 223.5.5.5)");
+                                Console.WriteLine("Line 3-n: Mix of all forwarders, including forwarders in line 1 and 2 and more...");
+                            }
+
+                            dnsClient.Proxy = _proxy;
+                            dnsClient.PreferIPv6 = _preferIPv6;
+                            dnsClient.Protocol = _forwarderProtocol;
+                            dnsClient.Retries = _retries;
+                            dnsClient.Timeout = _timeout;
+
+                            response = dnsClient.Resolve(request.Question[0]);
+
+                            _dnsCache.CacheResponse(response);
                         }
                         else
                         {

@@ -8,5 +8,10 @@ namespace DnsServerCore.Dns.AntiRogue
 
         public bool IsExpired => DateTime.Now.CompareTo(ExpiresAt) > 0;
         public bool IsNotExpired => DateTime.Now.CompareTo(ExpiresAt) <= 0;
+
+        public bool IsNotExpiringIn(TimeSpan timeSpan)
+        {
+            return DateTime.Now.Add(timeSpan).CompareTo(ExpiresAt) <= 0;
+        }
     }
 }
