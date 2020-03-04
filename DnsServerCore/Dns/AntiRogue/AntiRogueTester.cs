@@ -53,6 +53,7 @@ namespace DnsServerCore.Dns.AntiRogue
 
         static AntiRogueTester()
         {
+            Console.WriteLine("====================  ANTI ROGUE INITIALIZATION  ====================");
             ExpireRogueAfter = TimeSpan.FromDays(7);
             ExpireNonRogueAfter = TimeSpan.FromDays(1);
             ExpireCannotDetermineAfter = TimeSpan.FromDays(1);
@@ -92,6 +93,8 @@ namespace DnsServerCore.Dns.AntiRogue
                 $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Renew expiring record timer started with hash code [{CheckExpiringTimer.GetHashCode().ToString()}] " +
                 $"and fires every [{CheckExpirationInterval.ToString()}]");
+            Console.WriteLine("====================  ANTI ROGUE INITIALIZATION  ====================");
+            Console.WriteLine();
         }
 
         private static void RenewAllExpiringRecords()
@@ -200,8 +203,12 @@ namespace DnsServerCore.Dns.AntiRogue
                     var parsedRecords = 0;
                     while (!reader.EndOfStream)
                     {
-                        var line = reader.ReadLine();
+                        var line = reader.ReadLine()?.Trim();
                         if (string.IsNullOrEmpty(line))
+                        {
+                            continue;
+                        }
+                        if (line[0] == '#')
                         {
                             continue;
                         }
@@ -234,9 +241,13 @@ namespace DnsServerCore.Dns.AntiRogue
                     var parsedRecords = 0;
                     while (!reader.EndOfStream)
                     {
-                        var line = reader.ReadLine();
+                        var line = reader.ReadLine()?.Trim();
                         parsingLine++;
                         if (string.IsNullOrEmpty(line))
+                        {
+                            continue;
+                        }
+                        if (line[0] == '#')
                         {
                             continue;
                         }
@@ -339,7 +350,7 @@ namespace DnsServerCore.Dns.AntiRogue
         private static void StartToTestDomain(DnsQuestionRecord dnsQuestion)
         {
             var domain = dnsQuestion.Name;
-            var testResult = GetTestResult(dnsQuestion);
+            var testResult = GetTestResult(dnsQuestion, false);
 
             switch (testResult)
             {
@@ -370,12 +381,6 @@ namespace DnsServerCore.Dns.AntiRogue
                         $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"[{domain}] is still being tested and is expected to finish by " +
                         $"[{Testings[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
-                    return;
-                case RogueResult.Blocked:
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                        $"[{domain}] is blocked for testing and resolving ");
                     return;
             }
             Task.Run(() =>
@@ -695,10 +700,10 @@ namespace DnsServerCore.Dns.AntiRogue
         private static bool IsNotIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
         {
             return ((dnsQuestionRecord.Type != DnsResourceRecordType.A) ||
-                    (dnsQuestionRecord.Class != DnsClass.IN || dnsQuestionRecord.Class != DnsClass.ANY));
+                    (dnsQuestionRecord.Class != DnsClass.IN && dnsQuestionRecord.Class != DnsClass.ANY));
         }
         
-        public static RogueResult GetTestResult(DnsQuestionRecord dnsQuestion)
+        public static RogueResult GetTestResult(DnsQuestionRecord dnsQuestion, bool autoStartTesting = true)
         {
             var domain = dnsQuestion.Name;
             if (IsNotIpv4InternetQuestion(dnsQuestion))
@@ -707,16 +712,24 @@ namespace DnsServerCore.Dns.AntiRogue
                     $"{DateTime.Now.ToString(DateTimeFormatter)} " +
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"DNS question for [{domain}  {dnsQuestion.Type.ToString()}  {dnsQuestion.Class.ToString()}] " +
-                    $"is not supported for testing and is blocked for resolving");
-                return RogueResult.Blocked;
+                    $"is not supported for testing and is treated as Cannot Determine");
+                return RogueResult.CannotDetermine;
             }
             if (BlackList.Any(item => item.Dominates(domain)))
             {
+                Console.WriteLine(
+                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"[{domain} is BLACK listed]");
                 return RogueResult.Rogue;
             }
 
             if (WhiteList.Any(item => item.Dominates(domain)))
             {
+                Console.WriteLine(
+                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"[{domain} is WHITE listed]");
                 return RogueResult.NotRogue;
             }
 
@@ -755,7 +768,12 @@ namespace DnsServerCore.Dns.AntiRogue
                 }
                 RemoveTestingRecord(domain);
             }
-            StartToTestDomain(dnsQuestion);
+
+            if (autoStartTesting)
+            {
+                StartToTestDomain(dnsQuestion);
+            }
+
             return RogueResult.NotTested;
             
         }

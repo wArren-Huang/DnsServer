@@ -1209,8 +1209,8 @@ namespace DnsServerCore.Dns
 
                             var dnsResolverConfig = new DnsResolverConfig(_proxy, _preferIPv6, _forwarderProtocol,
                                 _retries, _timeout);
-                            
-                            DnsClient dnsClient;
+
+                            DnsClient dnsClient = null;
                             var question = request.Question[0];
                             if (_forwarders.Length > 2)
                             {
@@ -1229,10 +1229,6 @@ namespace DnsServerCore.Dns
                                     case RogueResult.CannotDetermine:
                                         dnsClient = new DnsClient(fastForwarder);
                                         break;
-                                    case RogueResult.Blocked:
-                                    default:
-                                        dnsClient = null;
-                                        break;
                                 }
                             }
                             else
@@ -1246,19 +1242,15 @@ namespace DnsServerCore.Dns
                                     "Line 3-n: Mix of all forwarders, including forwarders in line 1 and 2 and more...");
                             }
 
-                            if (dnsClient != null)
-                            {
-                                dnsClient.Proxy = _proxy;
-                                dnsClient.PreferIPv6 = _preferIPv6;
-                                dnsClient.Protocol = _forwarderProtocol;
-                                dnsClient.Retries = _retries;
-                                dnsClient.Timeout = _timeout;
+                            dnsClient.Proxy = _proxy;
+                            dnsClient.PreferIPv6 = _preferIPv6;
+                            dnsClient.Protocol = _forwarderProtocol;
+                            dnsClient.Retries = _retries;
+                            dnsClient.Timeout = _timeout;
 
-                                response = dnsClient.Resolve(request.Question[0]);
+                            response = dnsClient.Resolve(request.Question[0]);
 
-                                _dnsCache.CacheResponse(response);
-                            }
-
+                            _dnsCache.CacheResponse(response);
                         }
 
 
