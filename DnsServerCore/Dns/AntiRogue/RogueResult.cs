@@ -7,5 +7,6 @@ namespace DnsServerCore.Dns.AntiRogue
         NotRogue,
         CannotDetermine,
         Testing,
+        Blocked,
     }
 }

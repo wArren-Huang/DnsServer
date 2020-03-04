@@ -105,13 +105,12 @@ namespace DnsServerCore.Dns.AntiRogue
                     $"[DnsResolverConfig] is not passed to this static class yet.");
                 return;
             }
-            Renew(Rogues, "rogue", _testingForwarders, _dnsResolverConfig.Value);
-            Renew(NonRogues, "non-rogue", _testingForwarders, _dnsResolverConfig.Value);
-            Renew(CannotDetermine, "cannot-determine", _testingForwarders, _dnsResolverConfig.Value);
+            RenewIfExpiring(Rogues, "rogue");
+            RenewIfExpiring(NonRogues, "non-rogue");
+            RenewIfExpiring(CannotDetermine, "cannot-determine");
         }
 
-        private static void Renew(ConcurrentDictionary<string, Expiration> dictionary, string name, 
-            NameServerAddress[] forwarders, DnsResolverConfig config)
+        private static void RenewIfExpiring(ConcurrentDictionary<string, Expiration> dictionary, string name)
         {
             foreach (var record in dictionary)
             {
@@ -126,7 +125,7 @@ namespace DnsServerCore.Dns.AntiRogue
                         $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"{name} record for [{domain}] is expiring in [{(expiration.ExpiresAt - DateTime.Now).ToString()}] " +
                         $" start to re-test domain");
-                Test(new DnsQuestionRecord(domain, DnsResourceRecordType.A, DnsClass.IN), forwarders, config);
+                Test(new DnsQuestionRecord(domain, DnsResourceRecordType.A, DnsClass.IN));
             }
         }
 
@@ -184,9 +183,9 @@ namespace DnsServerCore.Dns.AntiRogue
             PrepareListFiles(
                 out var whiteListFile, 
                 out var blackListFile);
-            LoadFromFile(rogueFile, Rogues, "rogue");
-            LoadFromFile(nonRogueFile, NonRogues, "non-rogue");
-            LoadFromFile(cannotDetermineFile, CannotDetermine, "cannot-determine");
+            LoadFromFile(rogueFile, Rogues, "ar-rogue");
+            LoadFromFile(nonRogueFile, NonRogues, "ar-non-rogue");
+            LoadFromFile(cannotDetermineFile, CannotDetermine, "ar-cannot-determine");
             LoadList(whiteListFile, WhiteList, "white-list");
             LoadList(blackListFile, BlackList, "black-list");
         }
@@ -319,8 +318,7 @@ namespace DnsServerCore.Dns.AntiRogue
             }
         }
 
-        public static void StartToTestDomain(DnsQuestionRecord dnsQuestion, NameServerAddress[] forwarders, 
-            DnsResolverConfig dnsResolvingConfig)
+        public static void SetConfig(NameServerAddress[] forwarders, DnsResolverConfig dnsResolvingConfig)
         {
             if (_testingForwarders == null)
             {
@@ -337,28 +335,11 @@ namespace DnsServerCore.Dns.AntiRogue
                     _dnsResolverConfig = dnsResolvingConfig;
                 }
             }
+        }
+        private static void StartToTestDomain(DnsQuestionRecord dnsQuestion)
+        {
             var domain = dnsQuestion.Name;
-            if (dnsQuestion.Type != DnsResourceRecordType.A && 
-                dnsQuestion.Type != DnsResourceRecordType.ANY)
-            {
-                if (dnsQuestion.Type == DnsResourceRecordType.AAAA)
-                {
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                        $"AAAA record question [{domain} {dnsQuestion.Type.ToString()} {dnsQuestion.Class.ToString()}] " +
-                        $"is skipped for testing ");
-                    return;
-                }
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                    $"Non A record question [{domain} {dnsQuestion.Type.ToString()} {dnsQuestion.Class.ToString()}] " +
-                    $"is skipped for testing and marked as [CannotDetermine]");
-                MarkDomain(domain, RogueResult.CannotDetermine);
-                return;
-            }
-            var testResult = GetTestResult(domain);
+            var testResult = GetTestResult(dnsQuestion);
 
             switch (testResult)
             {
@@ -390,27 +371,31 @@ namespace DnsServerCore.Dns.AntiRogue
                         $"[{domain}] is still being tested and is expected to finish by " +
                         $"[{Testings[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
                     return;
+                case RogueResult.Blocked:
+                    Console.WriteLine(
+                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                        $"[{domain}] is blocked for testing and resolving ");
+                    return;
             }
             Task.Run(() =>
             {
-                Test(dnsQuestion, forwarders, dnsResolvingConfig);
+                Test(dnsQuestion);
             });
             MarkDomain(domain, RogueResult.Testing);
         }
 
-        private static void Test(DnsQuestionRecord questionRecord, NameServerAddress[] forwarders,
-            DnsResolverConfig dnsResolvingConfig)
+        private static void Test(DnsQuestionRecord questionRecord)
         {
             var domain = questionRecord.Name;
 
-            if (questionRecord.Class != DnsClass.IN)
+            if (_testingForwarders == null || ! _dnsResolverConfig.HasValue)
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                    $"Non IN class question ({questionRecord.Class.ToString()}) is skipped for testing " +
-                    $"and marked as [CannotDetermine]");
-                MarkDomain(domain, RogueResult.CannotDetermine);
+                Console.WriteLine("**********************************************************************************");
+                Console.WriteLine($"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                                  $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                                  $"TestingForwarders or DnsResolvingConfig not assigned, need check code for error!");
+                Console.WriteLine("**********************************************************************************");
                 return;
             }
             
@@ -422,15 +407,15 @@ namespace DnsServerCore.Dns.AntiRogue
             var results = new LinkedList<HttpsTestResult>();
             for (var i = 0; i < TestRounds; i++)
             {
-                foreach (var forwarder in forwarders)
+                foreach (var forwarder in _testingForwarders)
                 {
                     var dnsClient = new DnsClient(forwarder)
                     {
-                        Proxy = dnsResolvingConfig.Proxy,
-                        PreferIPv6 = dnsResolvingConfig.PreferIPv6,
-                        Protocol = dnsResolvingConfig.ForwarderProtocol,
-                        Retries = dnsResolvingConfig.Retries,
-                        Timeout = dnsResolvingConfig.Timeout
+                        Proxy = _dnsResolverConfig.Value.Proxy,
+                        PreferIPv6 = _dnsResolverConfig.Value.PreferIPv6,
+                        Protocol = _dnsResolverConfig.Value.ForwarderProtocol,
+                        Retries = _dnsResolverConfig.Value.Retries,
+                        Timeout = _dnsResolverConfig.Value.Timeout
                     };
                     var response = dnsClient.Resolve(questionRecord);
                     if (response == null)
@@ -706,9 +691,35 @@ namespace DnsServerCore.Dns.AntiRogue
                     break;
             }
         }
-        
-        public static RogueResult GetTestResult(string domain)
+
+        private static bool IsNotIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
         {
+            return ((dnsQuestionRecord.Type != DnsResourceRecordType.A) ||
+                    (dnsQuestionRecord.Class != DnsClass.IN || dnsQuestionRecord.Class != DnsClass.ANY));
+        }
+        
+        public static RogueResult GetTestResult(DnsQuestionRecord dnsQuestion)
+        {
+            var domain = dnsQuestion.Name;
+            if (IsNotIpv4InternetQuestion(dnsQuestion))
+            {
+                Console.WriteLine(
+                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"DNS question for [{domain}  {dnsQuestion.Type.ToString()}  {dnsQuestion.Class.ToString()}] " +
+                    $"is not supported for testing and is blocked for resolving");
+                return RogueResult.Blocked;
+            }
+            if (BlackList.Any(item => item.Dominates(domain)))
+            {
+                return RogueResult.Rogue;
+            }
+
+            if (WhiteList.Any(item => item.Dominates(domain)))
+            {
+                return RogueResult.NotRogue;
+            }
+
             if (Rogues.ContainsKey(domain))
             {
                 if (Rogues[domain].IsNotExpired)
@@ -744,8 +755,9 @@ namespace DnsServerCore.Dns.AntiRogue
                 }
                 RemoveTestingRecord(domain);
             }
-
+            StartToTestDomain(dnsQuestion);
             return RogueResult.NotTested;
+            
         }
         
         private static void RemoveRogueRecord(string domain)

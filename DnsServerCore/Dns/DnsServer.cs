@@ -1200,7 +1200,8 @@ namespace DnsServerCore.Dns
                                 foreach (NameServerAddress nameServerAddress in _forwarders)
                                 {
                                     if (nameServerAddress.IsIPEndPointStale) //refresh forwarder IPEndPoint if stale
-                                        nameServerAddress.RecursiveResolveIPAddress(_dnsCache, null, _preferIPv6, _retries, _timeout);
+                                        nameServerAddress.RecursiveResolveIPAddress(_dnsCache, null, _preferIPv6,
+                                            _retries, _timeout);
                                 }
                             }
 
@@ -1208,7 +1209,7 @@ namespace DnsServerCore.Dns
 
                             var dnsResolverConfig = new DnsResolverConfig(_proxy, _preferIPv6, _forwarderProtocol,
                                 _retries, _timeout);
-
+                            
                             DnsClient dnsClient;
                             var question = request.Question[0];
                             if (_forwarders.Length > 2)
@@ -1216,13 +1217,11 @@ namespace DnsServerCore.Dns
                                 var trustedForwarder = _forwarders[0];
                                 var fastForwarder = _forwarders[1];
                                 var testForwarders = _forwarders.Skip(2).ToArray();
-                                switch (AntiRogueTester.GetTestResult(question.Name))
+                                AntiRogueTester.SetConfig(testForwarders, dnsResolverConfig);
+                                switch (AntiRogueTester.GetTestResult(question))
                                 {
                                     case RogueResult.Rogue:
                                     case RogueResult.NotTested:
-                                        dnsClient = new DnsClient(trustedForwarder);
-                                        AntiRogueTester.StartToTestDomain(question, testForwarders, dnsResolverConfig);
-                                        break;
                                     case RogueResult.Testing:
                                         dnsClient = new DnsClient(trustedForwarder);
                                         break;
@@ -1230,30 +1229,39 @@ namespace DnsServerCore.Dns
                                     case RogueResult.CannotDetermine:
                                         dnsClient = new DnsClient(fastForwarder);
                                         break;
+                                    case RogueResult.Blocked:
                                     default:
-                                        dnsClient = new DnsClient(fastForwarder);
+                                        dnsClient = null;
                                         break;
                                 }
                             }
                             else
                             {
                                 dnsClient = new DnsClient(_forwarders);
-                                Console.WriteLine("Less then 2 forwarders configured, will no test for rogue, if rogue testing is required, configure forwarders in following orders:");
+                                Console.WriteLine(
+                                    "Less then 2 forwarders configured, will no test for rogue, if rogue testing is required, configure forwarders in following orders:");
                                 Console.WriteLine("Line 1: Trusted Forwarder (e.g. 1.1.1.1)");
                                 Console.WriteLine("Line 2: Fast Forwarder (e.g. 223.5.5.5)");
-                                Console.WriteLine("Line 3-n: Mix of all forwarders, including forwarders in line 1 and 2 and more...");
+                                Console.WriteLine(
+                                    "Line 3-n: Mix of all forwarders, including forwarders in line 1 and 2 and more...");
                             }
 
-                            dnsClient.Proxy = _proxy;
-                            dnsClient.PreferIPv6 = _preferIPv6;
-                            dnsClient.Protocol = _forwarderProtocol;
-                            dnsClient.Retries = _retries;
-                            dnsClient.Timeout = _timeout;
+                            if (dnsClient != null)
+                            {
+                                dnsClient.Proxy = _proxy;
+                                dnsClient.PreferIPv6 = _preferIPv6;
+                                dnsClient.Protocol = _forwarderProtocol;
+                                dnsClient.Retries = _retries;
+                                dnsClient.Timeout = _timeout;
 
-                            response = dnsClient.Resolve(request.Question[0]);
+                                response = dnsClient.Resolve(request.Question[0]);
 
-                            _dnsCache.CacheResponse(response);
+                                _dnsCache.CacheResponse(response);
+                            }
+
                         }
+
+
                         else
                         {
                             //recursive resolve and update cache
