@@ -43,6 +43,7 @@ namespace DnsServerCore.Dns.AntiRogue
 
         private static readonly List<WildcardDomainRecord> WhiteList;
         private static readonly List<WildcardDomainRecord> BlackList;
+        private static readonly List<WildcardDomainRecord> BlockList;
 
         private static readonly Timer FileSavingTimer;
         private static readonly Timer CheckExpiringTimer;
@@ -73,6 +74,7 @@ namespace DnsServerCore.Dns.AntiRogue
         
             WhiteList = new List<WildcardDomainRecord>();
             BlackList = new List<WildcardDomainRecord>();
+            BlockList = new List<WildcardDomainRecord>();
             LoadFromFiles();
             
             FileSavingTimer = new Timer((state) =>
@@ -155,7 +157,7 @@ namespace DnsServerCore.Dns.AntiRogue
             cannotDetermineFile = Path.Combine(configDirectory, "ar-cannot-determine");
         }
         
-        private static void PrepareListFiles(out string whiteListFile, out string blackListFile)
+        private static void PrepareListFiles(out string whiteListFile, out string blackListFile, out string blockListFile)
         {
             var assembly = Assembly.GetEntryAssembly();
             if (assembly == null)
@@ -175,6 +177,7 @@ namespace DnsServerCore.Dns.AntiRogue
 
             whiteListFile = Path.Combine(configDirectory, "ar-white-list");
             blackListFile = Path.Combine(configDirectory, "ar-black-list");
+            blockListFile = Path.Combine(configDirectory, "ar-block-list");
         }
 
         private static void LoadFromFiles()
@@ -185,12 +188,14 @@ namespace DnsServerCore.Dns.AntiRogue
                 out var cannotDetermineFile);
             PrepareListFiles(
                 out var whiteListFile, 
-                out var blackListFile);
+                out var blackListFile,
+                out var blockListFile);
             LoadFromFile(rogueFile, Rogues, "ar-rogue");
             LoadFromFile(nonRogueFile, NonRogues, "ar-non-rogue");
             LoadFromFile(cannotDetermineFile, CannotDetermine, "ar-cannot-determine");
             LoadList(whiteListFile, WhiteList, "white-list");
             LoadList(blackListFile, BlackList, "black-list");
+            LoadList(blockListFile, BlockList, "block-list");
         }
 
         private static void LoadList(string file, ICollection<WildcardDomainRecord> list, string name)
@@ -282,6 +287,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     $"{file} not exist, skipped loading {name} records");
             }
         }
+        
         private static void SaveToFiles()
         {
             PrepareConfigFiles(
@@ -292,6 +298,7 @@ namespace DnsServerCore.Dns.AntiRogue
             SaveToFile(NonRogues, nonRogueFile, "non-rogues");
             SaveToFile(CannotDetermine, cannotDetermineFile, "cannot-determine");
         }
+        
         private static void SaveToFile(ConcurrentDictionary<string, Expiration> dictionary, string file, string name)
         {
             if (UpdateAndSaveTime[dictionary].IsDirty)
@@ -329,24 +336,6 @@ namespace DnsServerCore.Dns.AntiRogue
             }
         }
 
-        public static void SetConfig(NameServerAddress[] forwarders, DnsResolverConfig dnsResolvingConfig)
-        {
-            if (_testingForwarders == null)
-            {
-                lock (ConfigUpdateLock)
-                {
-                    _testingForwarders = forwarders;
-                }
-            }
-
-            if (_dnsResolverConfig == null)
-            {
-                lock (ConfigUpdateLock)
-                {
-                    _dnsResolverConfig = dnsResolvingConfig;
-                }
-            }
-        }
         private static void StartToTestDomain(DnsQuestionRecord dnsQuestion)
         {
             var domain = dnsQuestion.Name;
@@ -564,6 +553,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 $"Marked [{domain}] as rogue for {ExpireRogueAfter.ToString()} until " +
                 $"[{Rogues[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
+        
         private static void AddNonRogue(string domain)
         {
             if (NonRogues.ContainsKey(domain))
@@ -594,6 +584,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 $"Marked [{domain}] as non-rogue for {ExpireNonRogueAfter.ToString()} until " +
                 $"[{NonRogues[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
+        
         private static void AddCannotDetermine(string domain)
         {
             if (CannotDetermine.ContainsKey(domain))
@@ -624,6 +615,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 $"Marked [{domain}] as cannot determine for {ExpireCannotDetermineAfter.ToString()} until " +
                 $"[{CannotDetermine[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
+        
         private static void AddTesting(string domain)
         {
             if (Testings.ContainsKey(domain))
@@ -654,6 +646,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 $"Starting to test [{domain}] which is expected to finish in {ExpireTestingStatusAfter.ToString()} by " +
                 $"[{Testings[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
+        
         private static void MarkDomain(string domain, RogueResult result)
         {
             switch (result)
@@ -697,10 +690,93 @@ namespace DnsServerCore.Dns.AntiRogue
             }
         }
 
-        private static bool IsNotIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
+        public static bool IsNotIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
         {
             return ((dnsQuestionRecord.Type != DnsResourceRecordType.A) ||
                     (dnsQuestionRecord.Class != DnsClass.IN && dnsQuestionRecord.Class != DnsClass.ANY));
+        }
+
+        public static bool IsIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
+        {
+            return !IsNotIpv4InternetQuestion(dnsQuestionRecord);
+        }
+
+        private static void RemoveRogueRecord(string domain)
+        {
+            if (!Rogues.ContainsKey(domain)) return;
+            Rogues.TryRemove(domain, out var expired);
+            lock (UpdateAndSaveTime[Rogues])
+            {
+                UpdateAndSaveTime[Rogues].UpdatedAt = DateTime.Now;
+            }
+            Console.WriteLine(
+                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                $"Removed [{domain}] from rogue which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
+        }
+        
+        private static void RemoveNonRogueRecord(string domain)
+        {
+            if (!NonRogues.ContainsKey(domain)) return;
+            NonRogues.TryRemove(domain, out var expired);
+            lock (UpdateAndSaveTime[NonRogues])
+            {
+                UpdateAndSaveTime[NonRogues].UpdatedAt = DateTime.Now;
+            }
+            Console.WriteLine(
+                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                $"Removed [{domain}] from non-rogue which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
+        }
+        
+        private static void RemoveCannotDetermineRecord(string domain)
+        {
+            if (!CannotDetermine.ContainsKey(domain)) return;
+            CannotDetermine.TryRemove(domain, out var expired);
+            lock (UpdateAndSaveTime[CannotDetermine])
+            {
+                UpdateAndSaveTime[CannotDetermine].UpdatedAt = DateTime.Now;
+            }
+            Console.WriteLine(
+                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                $"Removed [{domain}] from cannot determine which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
+        }
+        
+        private static void RemoveTestingRecord(string domain)
+        {
+            if (!Testings.ContainsKey(domain)) return;
+            Testings.TryRemove(domain, out var expired);
+            lock (UpdateAndSaveTime[Testings])
+            {
+                UpdateAndSaveTime[Testings].UpdatedAt = DateTime.Now;
+            }
+            Console.WriteLine(
+                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                $"Finished testing [{domain}] which was expected to finish by " +
+                $"[{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}] "
+                + $"(Time taken: {(ExpireTestingStatusAfter - (expired.ExpiresAt-DateTime.Now)).ToString()})"
+            );
+        }
+        
+        public static void SetConfig(NameServerAddress[] forwarders, DnsResolverConfig dnsResolvingConfig)
+        {
+            if (_testingForwarders == null)
+            {
+                lock (ConfigUpdateLock)
+                {
+                    _testingForwarders = forwarders;
+                }
+            }
+
+            if (_dnsResolverConfig == null)
+            {
+                lock (ConfigUpdateLock)
+                {
+                    _dnsResolverConfig = dnsResolvingConfig;
+                }
+            }
         }
         
         public static RogueResult GetTestResult(DnsQuestionRecord dnsQuestion, bool autoStartTesting = true)
@@ -712,9 +788,19 @@ namespace DnsServerCore.Dns.AntiRogue
                     $"{DateTime.Now.ToString(DateTimeFormatter)} " +
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"DNS question for [{domain}  {dnsQuestion.Type.ToString()}  {dnsQuestion.Class.ToString()}] " +
-                    $"is not supported for testing and is treated as Cannot Determine");
-                return RogueResult.CannotDetermine;
+                    $"is not supported for testing or resolving");
+                return RogueResult.Blocking;
             }
+            
+            if (BlockList.Any(item => item.Dominates(domain)))
+            {
+                Console.WriteLine(
+                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"[{domain} is BLOCKED]");
+                return RogueResult.Blocking;
+            }
+            
             if (BlackList.Any(item => item.Dominates(domain)))
             {
                 Console.WriteLine(
@@ -776,61 +862,6 @@ namespace DnsServerCore.Dns.AntiRogue
 
             return RogueResult.NotTested;
             
-        }
-        
-        private static void RemoveRogueRecord(string domain)
-        {
-            if (!Rogues.ContainsKey(domain)) return;
-            Rogues.TryRemove(domain, out var expired);
-            lock (UpdateAndSaveTime[Rogues])
-            {
-                UpdateAndSaveTime[Rogues].UpdatedAt = DateTime.Now;
-            }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                $"Removed [{domain}] from rogue which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
-        }
-        private static void RemoveNonRogueRecord(string domain)
-        {
-            if (!NonRogues.ContainsKey(domain)) return;
-            NonRogues.TryRemove(domain, out var expired);
-            lock (UpdateAndSaveTime[NonRogues])
-            {
-                UpdateAndSaveTime[NonRogues].UpdatedAt = DateTime.Now;
-            }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                $"Removed [{domain}] from non-rogue which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
-        }
-        private static void RemoveCannotDetermineRecord(string domain)
-        {
-            if (!CannotDetermine.ContainsKey(domain)) return;
-            CannotDetermine.TryRemove(domain, out var expired);
-            lock (UpdateAndSaveTime[CannotDetermine])
-            {
-                UpdateAndSaveTime[CannotDetermine].UpdatedAt = DateTime.Now;
-            }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                $"Removed [{domain}] from cannot determine which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
-        }
-        private static void RemoveTestingRecord(string domain)
-        {
-            if (!Testings.ContainsKey(domain)) return;
-            Testings.TryRemove(domain, out var expired);
-            lock (UpdateAndSaveTime[Testings])
-            {
-                UpdateAndSaveTime[Testings].UpdatedAt = DateTime.Now;
-            }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                $"Finished testing [{domain}] which was expected to finish by " +
-                $"[{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}] " +
-                $"(Time difference: {(expired.ExpiresAt-DateTime.Now).ToString()})");
         }
     }
 }

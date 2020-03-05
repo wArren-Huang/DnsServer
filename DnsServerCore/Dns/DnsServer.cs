@@ -883,8 +883,7 @@ namespace DnsServerCore.Dns
                     {
                         var question = request.Question[0];
                         var client = remoteEP.GetAddress();
-                        if ((question.Class == DnsClass.IN || question.Class == DnsClass.ANY) && 
-                            (question.Type == DnsResourceRecordType.A))
+                        if (AntiRogueTester.IsIpv4InternetQuestion(question))
                         {
                             ResolvingStatistics.Encountered(client, question.Name);
                         }
@@ -1229,6 +1228,22 @@ namespace DnsServerCore.Dns
                                     case RogueResult.CannotDetermine:
                                         dnsClient = new DnsClient(fastForwarder);
                                         break;
+                                    case RogueResult.Blocking:
+                                    default:
+                                        response = new DnsDatagram(
+                                            new DnsHeader(request.Header.Identifier, 
+                                                true, 
+                                                DnsOpcode.StandardQuery, 
+                                                false, false,
+                                                request.Header.RecursionDesired,
+                                                false, false, false,
+                                                DnsResponseCode.Refused,
+                                                1, 0, 0, 0), 
+                                            request.Question, 
+                                            new DnsResourceRecord[] { }, 
+                                            new DnsResourceRecord[] { }, 
+                                            new DnsResourceRecord[] { });
+                                        break;
                                 }
                             }
                             else
@@ -1242,15 +1257,18 @@ namespace DnsServerCore.Dns
                                     "Line 3-n: Mix of all forwarders, including forwarders in line 1 and 2 and more...");
                             }
 
-                            dnsClient.Proxy = _proxy;
-                            dnsClient.PreferIPv6 = _preferIPv6;
-                            dnsClient.Protocol = _forwarderProtocol;
-                            dnsClient.Retries = _retries;
-                            dnsClient.Timeout = _timeout;
+                            if (dnsClient != null)
+                            {
+                                dnsClient.Proxy = _proxy;
+                                dnsClient.PreferIPv6 = _preferIPv6;
+                                dnsClient.Protocol = _forwarderProtocol;
+                                dnsClient.Retries = _retries;
+                                dnsClient.Timeout = _timeout;
 
-                            response = dnsClient.Resolve(request.Question[0]);
+                                response = dnsClient.Resolve(request.Question[0]);
 
-                            _dnsCache.CacheResponse(response);
+                                _dnsCache.CacheResponse(response);
+                            }
                         }
 
 
