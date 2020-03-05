@@ -6,13 +6,17 @@ namespace DnsServerCore.Dns.AntiRogue
 
         public WildcardDomainRecord(string domainName)
         {
-            WildcardDomainName = domainName;
+            if (domainName[0] == '.')
+            {
+                WildcardDomainName = domainName;
+            }
+
+            WildcardDomainName = $".{domainName}";
         }
 
         public bool Dominates(string subDomainName)
         {
-            return WildcardDomainName.Length <= subDomainName.Length && 
-                   subDomainName.Substring(subDomainName.Length - WildcardDomainName.Length).Equals(WildcardDomainName);
+            return subDomainName.EndsWith(WildcardDomainName);
         }
     }
 }
