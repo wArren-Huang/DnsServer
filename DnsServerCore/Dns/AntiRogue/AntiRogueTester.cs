@@ -54,6 +54,7 @@ namespace DnsServerCore.Dns.AntiRogue
 
         static AntiRogueTester()
         {
+            Console.WriteLine("release-4 built on 2020-03-06");
             Console.WriteLine("====================  ANTI ROGUE INITIALIZATION  ====================");
             ExpireRogueAfter = TimeSpan.FromDays(7);
             ExpireNonRogueAfter = TimeSpan.FromDays(1);
