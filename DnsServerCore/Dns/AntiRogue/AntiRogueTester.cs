@@ -797,7 +797,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 Console.WriteLine(
                     $"{DateTime.Now.ToString(DateTimeFormatter)} " +
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                    $"[{domain} is BLOCKED]");
+                    $"[{domain}] is BLOCKED");
                 return RogueResult.Blocking;
             }
             
@@ -806,7 +806,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 Console.WriteLine(
                     $"{DateTime.Now.ToString(DateTimeFormatter)} " +
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                    $"[{domain} is BLACK listed]");
+                    $"[{domain}] is BLACK listed");
                 return RogueResult.Rogue;
             }
 
@@ -815,7 +815,7 @@ namespace DnsServerCore.Dns.AntiRogue
                 Console.WriteLine(
                     $"{DateTime.Now.ToString(DateTimeFormatter)} " +
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                    $"[{domain} is WHITE listed]");
+                    $"[{domain}] is WHITE listed");
                 return RogueResult.NotRogue;
             }
 

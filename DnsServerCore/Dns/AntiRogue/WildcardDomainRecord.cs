@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace DnsServerCore.Dns.AntiRogue
 {
     public class WildcardDomainRecord
@@ -8,15 +10,15 @@ namespace DnsServerCore.Dns.AntiRogue
         {
             if (domainName[0] == '.')
             {
-                WildcardDomainName = domainName;
+                WildcardDomainName = domainName.ToLower(CultureInfo.InvariantCulture);
             }
 
-            WildcardDomainName = $".{domainName}";
+            WildcardDomainName = $".{domainName.ToLower(CultureInfo.InvariantCulture)}";
         }
 
         public bool Dominates(string subDomainName)
         {
-            return subDomainName.EndsWith(WildcardDomainName);
+            return subDomainName.ToLower(CultureInfo.InvariantCulture).EndsWith(WildcardDomainName);
         }
     }
 }
