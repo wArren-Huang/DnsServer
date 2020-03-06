@@ -8,17 +8,14 @@ namespace DnsServerCore.Dns.AntiRogue
 
         public WildcardDomainRecord(string domainName)
         {
-            if (domainName[0] == '.')
-            {
-                WildcardDomainName = domainName.ToLower(CultureInfo.InvariantCulture);
-            }
-
-            WildcardDomainName = $".{domainName.ToLower(CultureInfo.InvariantCulture)}";
+            WildcardDomainName = domainName.ToLower(CultureInfo.InvariantCulture);
         }
 
         public bool Dominates(string subDomainName)
         {
-            return subDomainName.ToLower(CultureInfo.InvariantCulture).EndsWith(WildcardDomainName);
+            return
+                subDomainName.ToLower(CultureInfo.InvariantCulture).Equals(WildcardDomainName) || 
+                subDomainName.ToLower(CultureInfo.InvariantCulture).EndsWith($".{WildcardDomainName}");
         }
     }
 }
