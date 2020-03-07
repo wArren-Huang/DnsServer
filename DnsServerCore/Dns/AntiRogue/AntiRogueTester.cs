@@ -218,6 +218,14 @@ namespace DnsServerCore.Dns.AntiRogue
                         {
                             continue;
                         }
+
+                        if (list.Any(r => 
+                            r.WildcardDomainName == line.ToLower(CultureInfo.InvariantCulture)))
+                        {
+                            Console.WriteLine($"Duplicated list item [{line}] found in {name} list");
+                            continue;
+                        }
+                        
                         list.Add(new WildcardDomainRecord(line));
                         parsedRecords++;
                     }
