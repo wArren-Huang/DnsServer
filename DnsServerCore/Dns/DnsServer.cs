@@ -1207,7 +1207,7 @@ namespace DnsServerCore.Dns
                             //query forwarders and update cache
 
                             var dnsResolverConfig = new DnsResolverConfig(_proxy, _preferIPv6, _forwarderProtocol,
-                                _retries, _timeout);
+                                _retries, _timeout, _log);
 
                             DnsClient dnsClient = null;
                             var question = request.Question[0];

@@ -427,6 +427,10 @@ namespace DnsServerCore.Dns.AntiRogue
                     }
                     catch
                     {
+                        _dnsResolverConfig.Value.Log?.Write(
+                            $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                            $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                            $"Failed to resolve [{domain}] with [{forwarder}]");
                         continue;
                     }
                     if (response == null)
