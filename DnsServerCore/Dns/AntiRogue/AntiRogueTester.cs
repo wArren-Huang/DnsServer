@@ -420,7 +420,15 @@ namespace DnsServerCore.Dns.AntiRogue
                         Retries = _dnsResolverConfig.Value.Retries,
                         Timeout = _dnsResolverConfig.Value.Timeout
                     };
-                    var response = dnsClient.Resolve(questionRecord);
+                    DnsDatagram response = null;
+                    try
+                    {
+                        response= dnsClient.Resolve(questionRecord);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
                     if (response == null)
                     {
                         continue;
