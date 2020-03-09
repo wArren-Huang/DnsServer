@@ -126,7 +126,7 @@ namespace DnsServerCore.Dns.AntiRogue
             {
                 var domain = record.Key;
                 var expiration = record.Value;
-                if (expiration.IsNotExpiringIn(ExpireTestingStatusAfter))
+                if (expiration.IsNotExpiringIn(TimeSpan.FromHours(1)))
                 {
                     continue;
                 }
@@ -418,6 +418,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     {
                         Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                             $"Failed to resolve [{domain}] with [{forwarder}]");
+                        results.AddLast(HttpsTestResult.FailedToResolve);
                         continue;
                     }
                     if (response == null)
@@ -488,7 +489,8 @@ namespace DnsServerCore.Dns.AntiRogue
             else if (resultsArray.Any(r => r == HttpsTestResult.AuthenticationSuccess))
             {
                 if (resultsArray.Any(r => r == HttpsTestResult.AuthenticationFailed) ||
-                    resultsArray.Any(r => r == HttpsTestResult.FailedToConnect))
+                    resultsArray.Any(r => r == HttpsTestResult.FailedToConnect) ||
+                    resultsArray.Any(r => r == HttpsTestResult.FailedToResolve))
                 {
                     MarkDomain(domain, RogueResult.Rogue);
                 }

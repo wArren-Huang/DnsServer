@@ -5,5 +5,6 @@ namespace DnsServerCore.Dns.AntiRogue
         AuthenticationSuccess,
         AuthenticationFailed,
         FailedToConnect,
+        FailedToResolve,
     }
 }
