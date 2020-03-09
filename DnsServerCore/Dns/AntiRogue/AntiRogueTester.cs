@@ -22,7 +22,7 @@ namespace DnsServerCore.Dns.AntiRogue
         public const int ExpectedCannotDetermineCount = 5000;
         
         private const string Splitter = ",";
-        private const string DateTimeFormatter = "yyyy-MM-dd HH:mm:ss.fffffff";
+        private const string DateTimeFormatter = "yyyy-MM-dd HH:mm:ss.fff";
         private const int HttpsPort = 443;
         private const int TcpConnectTimeoutInMilli = 5000;
         private const int TestRounds = 5;
@@ -54,8 +54,7 @@ namespace DnsServerCore.Dns.AntiRogue
 
         static AntiRogueTester()
         {
-            Console.WriteLine("release-4 built on 2020-03-06");
-            Console.WriteLine("====================  ANTI ROGUE INITIALIZATION  ====================");
+            Log("====================  ANTI ROGUE INITIALIZATION  ====================");
             ExpireRogueAfter = TimeSpan.FromDays(7);
             ExpireNonRogueAfter = TimeSpan.FromDays(1);
             ExpireCannotDetermineAfter = TimeSpan.FromDays(1);
@@ -82,31 +81,36 @@ namespace DnsServerCore.Dns.AntiRogue
             {
                 SaveToFiles();
             }, null, FileSavingInterval, FileSavingInterval);
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"File saving timer started with hash code [{FileSavingTimer.GetHashCode().ToString()}] " +
                 $"and fires every [{FileSavingInterval.ToString()}]");
             CheckExpiringTimer = new Timer((state) =>
             {
                 RenewAllExpiringRecords();
             }, null, CheckExpirationInterval, CheckExpirationInterval);
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Renew expiring record timer started with hash code [{CheckExpiringTimer.GetHashCode().ToString()}] " +
                 $"and fires every [{CheckExpirationInterval.ToString()}]");
-            Console.WriteLine("====================  ANTI ROGUE INITIALIZATION  ====================");
-            Console.WriteLine();
+            Log("====================  ANTI ROGUE INITIALIZATION  ====================");
+        }
+
+        private static void Log(string message)
+        {
+            if (_dnsResolverConfig.HasValue && _dnsResolverConfig.Value.Log != null)
+            {
+                _dnsResolverConfig.Value.Log.Write(message);
+            }
+            else
+            {
+                Console.WriteLine($"[{DateTime.Now.ToString(DateTimeFormatter)}] {message}");
+            }
         }
 
         private static void RenewAllExpiringRecords()
         {
             if (_testingForwarders == null || !_dnsResolverConfig.HasValue)
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"Unable to renew all expiring records as [TestingForwarders] or " +
                     $"[DnsResolverConfig] is not passed to this static class yet.");
                 return;
@@ -126,11 +130,9 @@ namespace DnsServerCore.Dns.AntiRogue
                 {
                     continue;
                 }
-                Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                        $"{name} record for [{domain}] is expiring in [{(expiration.ExpiresAt - DateTime.Now).ToString()}] " +
-                        $" start to re-test domain");
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"{name} record for [{domain}] is expiring in [{(expiration.ExpiresAt - DateTime.Now).ToString()}] " +
+                    $" start to re-test domain");
                 Test(new DnsQuestionRecord(domain, DnsResourceRecordType.A, DnsClass.IN));
             }
         }
@@ -222,23 +224,23 @@ namespace DnsServerCore.Dns.AntiRogue
                         if (list.Any(r => 
                             r.WildcardDomainName == line.ToLower(CultureInfo.InvariantCulture)))
                         {
-                            Console.WriteLine($"Duplicated list item [{line}] found in {name} list");
+                            Log($"Duplicated list item [{line}] found in {name} list");
                             continue;
                         }
                         
                         list.Add(new WildcardDomainRecord(line));
                         parsedRecords++;
                     }
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                    Log(
+        
                         $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"Loaded {parsedRecords} {name} records from {file}");
                 }
             }
             else
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                Log(
+    
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"{file} not exist, skipped loading {name} records");
             }
@@ -275,23 +277,22 @@ namespace DnsServerCore.Dns.AntiRogue
                         }
                         catch (Exception e)
                         {
-                            Console.WriteLine(
-                                value: $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                                       $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                                       $"Failed to parse line {parsingLine} from {file}: [{line}], possible incorrect format.");
-                            Console.WriteLine(e);
+                            Log($"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                                $"Failed to parse line {parsingLine} from {file}: [{line}], possible incorrect format.");
+                            Log(e.ToString());
                         }
                     }
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                    Log(
+        
                         $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"Loaded {parsedRecords} {name} records from {file}");
                 }
             }
             else
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                Log(
+    
                     $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"{file} not exist, skipped loading {name} records");
             }
@@ -330,17 +331,13 @@ namespace DnsServerCore.Dns.AntiRogue
                         memoryStream.CopyTo(fileStream);
                         fileStream.Flush();
                     }
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"Saved {recordCount} {name} records to {file}");
                 }
             }
             else
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"Skipped updating {file} as {name} records not changed");
             }
         }
@@ -353,30 +350,22 @@ namespace DnsServerCore.Dns.AntiRogue
             switch (testResult)
             {
                 case RogueResult.Rogue:
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"[{domain}] is marked as being rogue and will not be tested before " +
                         $"[{Rogues[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
                     return;
                 case RogueResult.NotRogue:
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"[{domain}] is marked as not rogue and will not be tested before " +
                         $"[{NonRogues[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
                     return;
                 case RogueResult.CannotDetermine:
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"[{domain}] is marked as cannot determined and will not be tested before " +
                         $"[{CannotDetermine[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
                     return;
                 case RogueResult.Testing:
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"[{domain}] is still being tested and is expected to finish by " +
                         $"[{Testings[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
                     return;
@@ -394,11 +383,11 @@ namespace DnsServerCore.Dns.AntiRogue
 
             if (_testingForwarders == null || ! _dnsResolverConfig.HasValue)
             {
-                Console.WriteLine("**********************************************************************************");
-                Console.WriteLine($"{DateTime.Now.ToString(DateTimeFormatter)} " +
+                Log("**********************************************************************************");
+                Log($"{DateTime.Now.ToString(DateTimeFormatter)} " +
                                   $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                                   $"TestingForwarders or DnsResolvingConfig not assigned, need check code for error!");
-                Console.WriteLine("**********************************************************************************");
+                Log("**********************************************************************************");
                 return;
             }
             
@@ -420,16 +409,14 @@ namespace DnsServerCore.Dns.AntiRogue
                         Retries = _dnsResolverConfig.Value.Retries,
                         Timeout = _dnsResolverConfig.Value.Timeout
                     };
-                    DnsDatagram response = null;
+                    DnsDatagram response;
                     try
                     {
                         response= dnsClient.Resolve(questionRecord);
                     }
                     catch
                     {
-                        _dnsResolverConfig.Value.Log?.Write(
-                            $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                            $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                        Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                             $"Failed to resolve [{domain}] with [{forwarder}]");
                         continue;
                     }
@@ -521,9 +508,7 @@ namespace DnsServerCore.Dns.AntiRogue
             var matchedWhiteListRecord = WhiteList.FirstOrDefault(r => r.Dominates(domain));
             if (matchedWhiteListRecord != null)
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"Skipped testing [{domain}] as it is white listed by parent domain " +
                     $"[{matchedWhiteListRecord.WildcardDomainName}]");
                 MarkDomain(domain, RogueResult.NotRogue);
@@ -532,9 +517,7 @@ namespace DnsServerCore.Dns.AntiRogue
             var matchedBlackListRecord = BlackList.FirstOrDefault(r => r.Dominates(domain));
             if (matchedBlackListRecord != null)
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"Skipped testing [{domain}] as it is black listed by parent domain " +
                     $"[{matchedBlackListRecord.WildcardDomainName}]");
                 MarkDomain(domain, RogueResult.Rogue);
@@ -568,9 +551,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     UpdateAndSaveTime[Rogues].UpdatedAt = DateTime.Now;
                 }
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Marked [{domain}] as rogue for {ExpireRogueAfter.ToString()} until " +
                 $"[{Rogues[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
@@ -599,9 +580,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     UpdateAndSaveTime[NonRogues].UpdatedAt = DateTime.Now;
                 }
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Marked [{domain}] as non-rogue for {ExpireNonRogueAfter.ToString()} until " +
                 $"[{NonRogues[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
@@ -630,9 +609,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     UpdateAndSaveTime[CannotDetermine].UpdatedAt = DateTime.Now;
                 }
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Marked [{domain}] as cannot determine for {ExpireCannotDetermineAfter.ToString()} until " +
                 $"[{CannotDetermine[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
@@ -661,9 +638,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     UpdateAndSaveTime[Testings].UpdatedAt = DateTime.Now;
                 }
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Starting to test [{domain}] which is expected to finish in {ExpireTestingStatusAfter.ToString()} by " +
                 $"[{Testings[domain].ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
@@ -703,9 +678,7 @@ namespace DnsServerCore.Dns.AntiRogue
                     RemoveTestingRecord(domain);
                     break;
                 default:
-                    Console.WriteLine(
-                        $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                        $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                         $"Cannot make [{domain}] as [{result.ToString()}], need to fix MarkDomain method");
                     break;
             }
@@ -730,9 +703,7 @@ namespace DnsServerCore.Dns.AntiRogue
             {
                 UpdateAndSaveTime[Rogues].UpdatedAt = DateTime.Now;
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Removed [{domain}] from rogue which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
         
@@ -744,9 +715,7 @@ namespace DnsServerCore.Dns.AntiRogue
             {
                 UpdateAndSaveTime[NonRogues].UpdatedAt = DateTime.Now;
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Removed [{domain}] from non-rogue which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
         
@@ -758,9 +727,7 @@ namespace DnsServerCore.Dns.AntiRogue
             {
                 UpdateAndSaveTime[CannotDetermine].UpdatedAt = DateTime.Now;
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Removed [{domain}] from cannot determine which expires at [{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}]");
         }
         
@@ -772,9 +739,7 @@ namespace DnsServerCore.Dns.AntiRogue
             {
                 UpdateAndSaveTime[Testings].UpdatedAt = DateTime.Now;
             }
-            Console.WriteLine(
-                $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"Finished testing [{domain}] which was expected to finish by " +
                 $"[{expired.ExpiresAt.ToString(CultureInfo.CurrentCulture)}] "
                 + $"(Time taken: {(ExpireTestingStatusAfter - (expired.ExpiresAt-DateTime.Now)).ToString()})"
@@ -805,9 +770,7 @@ namespace DnsServerCore.Dns.AntiRogue
             var domain = dnsQuestion.Name;
             if (IsNotIpv4InternetQuestion(dnsQuestion))
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"DNS question for [{domain}  {dnsQuestion.Type.ToString()}  {dnsQuestion.Class.ToString()}] " +
                     $"is not supported for testing or resolving");
                 return RogueResult.Blocking;
@@ -815,27 +778,21 @@ namespace DnsServerCore.Dns.AntiRogue
             
             if (BlockList.Any(item => item.Dominates(domain)))
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"[{domain}] is BLOCKED");
                 return RogueResult.Blocking;
             }
             
             if (BlackList.Any(item => item.Dominates(domain)))
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"[{domain}] is BLACK listed");
                 return RogueResult.Rogue;
             }
 
             if (WhiteList.Any(item => item.Dominates(domain)))
             {
-                Console.WriteLine(
-                    $"{DateTime.Now.ToString(DateTimeFormatter)} " +
-                    $"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"[{domain}] is WHITE listed");
                 return RogueResult.NotRogue;
             }
