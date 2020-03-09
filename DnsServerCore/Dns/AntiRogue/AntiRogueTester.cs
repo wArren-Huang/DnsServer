@@ -46,7 +46,7 @@ namespace DnsServerCore.Dns.AntiRogue
         private static readonly List<WildcardDomainRecord> BlockList;
 
         private static readonly Timer FileSavingTimer;
-        private static readonly Timer CheckExpiringTimer;
+        // private static readonly Timer CheckExpiringTimer;
 
         private static NameServerAddress[] _testingForwarders;
         private static DnsResolverConfig? _dnsResolverConfig;
@@ -56,8 +56,8 @@ namespace DnsServerCore.Dns.AntiRogue
         {
             Log("====================  ANTI ROGUE INITIALIZATION  ====================");
             ExpireRogueAfter = TimeSpan.FromDays(7);
-            ExpireNonRogueAfter = TimeSpan.FromDays(1);
-            ExpireCannotDetermineAfter = TimeSpan.FromDays(1);
+            ExpireNonRogueAfter = TimeSpan.FromDays(7);
+            ExpireCannotDetermineAfter = TimeSpan.FromDays(7);
             ExpireTestingStatusAfter = TimeSpan.FromMinutes(5);
             FileSavingInterval = TimeSpan.FromMinutes(15);
             CheckExpirationInterval = TimeSpan.FromMinutes(1);
@@ -84,14 +84,14 @@ namespace DnsServerCore.Dns.AntiRogue
             Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                 $"File saving timer started with hash code [{FileSavingTimer.GetHashCode().ToString()}] " +
                 $"and fires every [{FileSavingInterval.ToString()}]");
-            CheckExpiringTimer = new Timer((state) =>
-            {
-                RenewAllExpiringRecords();
-            }, null, CheckExpirationInterval, CheckExpirationInterval);
-            Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
-                $"Renew expiring record timer started with hash code [{CheckExpiringTimer.GetHashCode().ToString()}] " +
-                $"and fires every [{CheckExpirationInterval.ToString()}]");
-            Log("====================  ANTI ROGUE INITIALIZATION  ====================");
+            // CheckExpiringTimer = new Timer((state) =>
+            // {
+            //     RenewAllExpiringRecords();
+            // }, null, CheckExpirationInterval, CheckExpirationInterval);
+            // Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+            //     $"Renew expiring record timer started with hash code [{CheckExpiringTimer.GetHashCode().ToString()}] " +
+            //     $"and fires every [{CheckExpirationInterval.ToString()}]");
+            // Log("====================  ANTI ROGUE INITIALIZATION  ====================");
         }
 
         private static void Log(string message)

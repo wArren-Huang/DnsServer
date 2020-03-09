@@ -1220,11 +1220,11 @@ namespace DnsServerCore.Dns
                                 switch (AntiRogueTester.GetTestResult(question))
                                 {
                                     case RogueResult.Rogue:
-                                    case RogueResult.NotTested:
-                                    case RogueResult.Testing:
                                         dnsClient = new DnsClient(trustedForwarder);
                                         break;
                                     case RogueResult.NotRogue:
+                                    case RogueResult.NotTested:
+                                    case RogueResult.Testing:
                                     case RogueResult.CannotDetermine:
                                         dnsClient = new DnsClient(fastForwarder);
                                         break;
