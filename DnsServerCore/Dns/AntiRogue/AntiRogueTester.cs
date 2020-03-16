@@ -686,15 +686,15 @@ namespace DnsServerCore.Dns.AntiRogue
             }
         }
 
-        public static bool IsNotIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
+        public static bool IsNotInternetQuestion(DnsQuestionRecord dnsQuestionRecord)
         {
-            return ((dnsQuestionRecord.Type != DnsResourceRecordType.A) ||
+            return ((dnsQuestionRecord.Type != DnsResourceRecordType.A && dnsQuestionRecord.Type != DnsResourceRecordType.AAAA) ||
                     (dnsQuestionRecord.Class != DnsClass.IN && dnsQuestionRecord.Class != DnsClass.ANY));
         }
 
         public static bool IsIpv4InternetQuestion(DnsQuestionRecord dnsQuestionRecord)
         {
-            return !IsNotIpv4InternetQuestion(dnsQuestionRecord);
+            return !IsNotInternetQuestion(dnsQuestionRecord);
         }
 
         private static void RemoveRogueRecord(string domain)
@@ -770,10 +770,18 @@ namespace DnsServerCore.Dns.AntiRogue
         public static RogueResult GetTestResult(DnsQuestionRecord dnsQuestion, bool autoStartTesting = true)
         {
             var domain = dnsQuestion.Name;
-            if (IsNotIpv4InternetQuestion(dnsQuestion))
+            if (IsNotInternetQuestion(dnsQuestion))
             {
                 Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
                     $"DNS question for [{domain}  {dnsQuestion.Type.ToString()}  {dnsQuestion.Class.ToString()}] " +
+                    $"is not supported for testing or resolving");
+                return RogueResult.Blocking;
+            }
+
+            if (Tlds.IsTld(domain))
+            {
+                Log($"AntiRogueResolver[{Thread.CurrentThread.ManagedThreadId.ToString()}] " +
+                    $"DNS TLD question for [{domain}  {dnsQuestion.Type.ToString()}  {dnsQuestion.Class.ToString()}] " +
                     $"is not supported for testing or resolving");
                 return RogueResult.Blocking;
             }
